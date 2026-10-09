@@ -1,0 +1,55 @@
+server:
+  port: ${SERVER_PORT:8091}
+
+spring:
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:kiosk_api}
+    username: ${DB_USER:kiosk_api}
+    password: ${DB_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      # kiosk-api la du an tach biet, so huu toan bo schema cua chinh no (khong co bang nao cua
+      # du an khac can bao ve) nen dung ddl-auto=update de don gian hoa viec trien khai lan dau.
+      # Xem README muc "Quyet dinh kien truc" de biet ly do va huong nang cap len Flyway sau nay.
+      ddl-auto: update
+    show-sql: ${SHOW_SQL:false}
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+  jackson:
+    default-property-inclusion: non_null
+
+kiosk:
+  jwt:
+    # Secret rieng cua kiosk-api, KHONG dung chung voi be-webview hay kiosk-admin.
+    secret: ${KIOSK_API_JWT_SECRET:kiosk-api-local-dev-secret-change-me-please-32bytes-minimum}
+    issuer: kiosk-api
+  ops:
+    api-key: ${OPS_API_KEY:change-me-ops-key}
+  rate-limit:
+    default-per-minute: 60
+    device-sessions-per-minute: 10
+    bootstrap-per-minute: 10
+    errors-per-minute: 1
+    sse-connect-per-minute: 6
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    vn.baotinmanhhai.kioskapi: INFO
