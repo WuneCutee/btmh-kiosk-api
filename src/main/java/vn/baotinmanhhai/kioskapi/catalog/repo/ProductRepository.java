@@ -28,21 +28,23 @@ public interface ProductRepository extends JpaRepository<ProductEntity, String> 
             """)
     Page<ProductEntity> findByCategory(@Param("categoryId") String categoryId, Pageable pageable);
 
+    // Khong con dung LOWER(p.name) LIKE ... o SQL cho tim kiem (II.2.7) - chi so sanh hoa/thuong,
+    // khong bo dau ("kim gia bao" se khong khop "Kim Gia Bảo" nhu tai lieu yeu cau). Thay bang 2
+    // truy van KHONG loc ten ben duoi, loc + phan trang bang VietnameseText.fold() o ProductService
+    // (xem comment o do vi sao khong dung Postgres unaccent extension).
     @Query("""
             SELECT p FROM ProductEntity p JOIN CategoryEntity c ON c.id = p.categoryId
             WHERE p.enabled = true AND c.enabled = true AND p.price IS NOT NULL
-            AND LOWER(p.name) LIKE LOWER(CONCAT('%', :name, '%'))
             ORDER BY c.displayOrder ASC, p.quantity ASC, p.createdAt DESC
             """)
-    Page<ProductEntity> searchAllCategories(@Param("name") String name, Pageable pageable);
+    List<ProductEntity> findAllEnabledPricedAcrossCategories();
 
     @Query("""
             SELECT p FROM ProductEntity p
             WHERE p.enabled = true AND p.categoryId = :categoryId AND p.price IS NOT NULL
-            AND LOWER(p.name) LIKE LOWER(CONCAT('%', :name, '%'))
             ORDER BY p.quantity ASC, p.createdAt DESC
             """)
-    Page<ProductEntity> searchByCategory(@Param("categoryId") String categoryId, @Param("name") String name, Pageable pageable);
+    List<ProductEntity> findAllEnabledPricedByCategory(@Param("categoryId") String categoryId);
 
     @Query("""
             SELECT p FROM ProductEntity p JOIN CategoryEntity c ON c.id = p.categoryId

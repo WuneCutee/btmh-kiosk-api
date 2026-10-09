@@ -121,8 +121,7 @@ public class DeviceAuthService {
         deviceRepository.save(device);
 
         JwtService.IssuedToken issued = jwtService.issue(device.getDeviceCode(), device.getStoreId(), matched.getKeyId());
-        boolean rotationNeeded = device.isForceKeyRotation()
-                || Duration.between(matched.getCreatedAt(), Instant.now()).compareTo(Duration.ofDays(365)) > 0;
+        boolean rotationNeeded = device.isForceKeyRotation() || keyOlderThan12Months(matched.getCreatedAt());
 
         return new DeviceSessionResponse(
                 issued.token(),
@@ -327,6 +326,13 @@ public class DeviceAuthService {
         } catch (Exception e) {
             log.warn("Khong don dep duoc khoa RETIRING het han", e);
         }
+    }
+
+    /** "khoa da dung du 12 thang" (II.5.1) - thang lich thuc su (Period), khong xap xi 365 ngay
+     *  (sai lech tich luy qua nam nhuan/so ngay thang khac nhau). */
+    private static boolean keyOlderThan12Months(Instant createdAt) {
+        return java.time.temporal.ChronoUnit.MONTHS.between(
+                createdAt.atZone(TimeUtil.VIETNAM_ZONE), Instant.now().atZone(TimeUtil.VIETNAM_ZONE)) >= 12;
     }
 
     private static String formatIso(Instant instant) {

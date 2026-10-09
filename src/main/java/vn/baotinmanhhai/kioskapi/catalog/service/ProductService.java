@@ -1,6 +1,7 @@
 package vn.baotinmanhhai.kioskapi.catalog.service;
 
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import vn.baotinmanhhai.kioskapi.catalog.dto.PageResponse;
@@ -12,6 +13,7 @@ import vn.baotinmanhhai.kioskapi.catalog.repo.ProductImageRepository;
 import vn.baotinmanhhai.kioskapi.catalog.repo.ProductRepository;
 import vn.baotinmanhhai.kioskapi.common.ErrorCodes;
 import vn.baotinmanhhai.kioskapi.common.TimeUtil;
+import vn.baotinmanhhai.kioskapi.common.VietnameseText;
 
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -43,15 +45,29 @@ public class ProductService {
         return toPageResponse(page);
     }
 
+    /**
+     * II.2.7: "khong phan biet hoa/thuong va khong phan biet dau" - LOWER()/LIKE thuan cua SQL
+     * khong bo dau duoc, nen loc TRONG JAVA bang VietnameseText.fold() thay vi SQL. Danh sach goc
+     * da duoc DB sap dung thu tu (giong II.2.6) nen chi can loc giu nguyen thu tu roi tu phan
+     * trang bang PageImpl - khong can sort lai.
+     */
     public PageResponse<ProductListItemDto> search(String rawName, String categoryId, Integer pageNumber, Integer pageSize) {
-        String name = rawName == null ? "" : rawName.trim();
+        String foldedQuery = VietnameseText.fold(rawName == null ? "" : rawName.trim());
         int size = resolvePageSize(pageSize);
         int number = pageNumber == null ? 0 : pageNumber;
         PageRequest pageable = PageRequest.of(number, size);
         boolean all = categoryId == null || categoryId.isBlank() || CATEGORY_ALL.equalsIgnoreCase(categoryId);
-        Page<ProductEntity> page = all
-                ? productRepository.searchAllCategories(name, pageable)
-                : productRepository.searchByCategory(categoryId, name, pageable);
+
+        List<ProductEntity> candidates = all
+                ? productRepository.findAllEnabledPricedAcrossCategories()
+                : productRepository.findAllEnabledPricedByCategory(categoryId);
+        List<ProductEntity> matched = candidates.stream()
+                .filter(p -> VietnameseText.fold(p.getName()).contains(foldedQuery))
+                .toList();
+
+        int from = Math.min((int) pageable.getOffset(), matched.size());
+        int to = Math.min(from + pageable.getPageSize(), matched.size());
+        Page<ProductEntity> page = new PageImpl<>(matched.subList(from, to), pageable, matched.size());
         return toPageResponse(page);
     }
 

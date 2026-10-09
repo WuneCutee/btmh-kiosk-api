@@ -131,10 +131,15 @@ Tat ca duoi `/api/v1/kiosk/**` va `/api/v1/miniapp/**`, tru 3 dong dau can `Auth
 ## Kiem thu da thuc hien (sandbox, khong co Postgres)
 
 - `./mvnw.cmd -q -DskipTests compile` - **PASS**.
-- `./mvnw.cmd -q test` - **PASS** (`KioskSignatureTestVectorTest`, 7/7 test): kiem chu ky
-  RSASSA-PSS-SHA256 bang test vector chinh thuc trong tai lieu (ca chieu verify chu ky cho san
-  trong tai lieu, VA chieu tu ky bang private key test vector roi verify lai, VA chieu am - chu ky
-  sai/baseString bi sua doi phai bi tu choi).
+- `./mvnw.cmd -q test` - **PASS**, 15/15 test, 3 class:
+  - `KioskSignatureTestVectorTest` (7 test): kiem chu ky RSASSA-PSS-SHA256 bang test vector chinh
+    thuc trong tai lieu (ca chieu verify chu ky cho san trong tai lieu, VA chieu tu ky bang private
+    key test vector roi verify lai, VA chieu am - chu ky sai/baseString bi sua doi phai bi tu choi).
+  - `VietnameseTextTest` (4 test): `VietnameseText.fold()` bo dau + ha chu thuong dung ("Kim Gia
+    Bảo Đạt" -> "kim gia bao dat", xu ly rieng `đ`/`Đ`).
+  - `ProductServiceSearchTest` (4 test): II.2.7 tim kiem san pham dung tu dau-cuoi (query khong
+    dau khop ten co dau, khong phan biet hoa/thuong, khong khop tra content rong thay vi loi, phan
+    trang tren tap da loc chinh xac).
 - **Khong co Postgres trong sandbox lam viec nay** nen KHONG kiem duoc runtime thuc te (khoi dong
   app, goi API thuc, flow kich hoat/lay token/xoay khoa/SSE end-to-end). Code da duoc doc lai ky
   theo tung bang truong cua tai lieu, nhung chua duoc xac nhan bang mot lan chay thuc voi DB.
@@ -151,23 +156,33 @@ Tat ca duoi `/api/v1/kiosk/**` va `/api/v1/miniapp/**`, tru 3 dong dau can `Auth
   dinh 1 instance duy nhat.
 - **Trang thai rate limit mat khi restart** (trong-tien-trinh, khong ben bi) - chap nhan duoc cho
   muc dich chong lam dung don gian, khong phai co che chong DDoS nghiem tuc.
-- **ETag/If-None-Match chua trien khai** cho II.2.2 (ads/playlist) va II.2.12 (bootstrap) - tai
-  lieu coi day la toi uu bang thong (tra 304), khong anh huong tinh dung cua API (App van nhan
-  duoc du lieu moi nhat qua 200 day du moi lan), nhung de dung 100% dac ta can bo sung.
-  Tuong tu, `/api/v1/kiosk/ads/playlist` chua xu ly header `If-None-Match` cua request.
-- **Tim kiem san pham (II.2.7) chi khong phan biet hoa/thuong**, CHUA bo dau tieng Viet (vi du
-  "kim gia bao" se KHONG khop "Kim Gia Bảo" trong trien khai hien tai vi thieu ham `unaccent` cua
-  Postgres/thu vien tuong duong) - can bo sung extension `unaccent` hoac chuan hoa du lieu truoc
-  khi dua vao san xuat.
 - **Sap xep tinh/thanh, cua hang theo bang chu cai tieng Viet** dung `java.text.Collator` voi
   locale "vi" - xap xi, chua duoc kiem chung ky voi moi truong hop dau/chu dac biet.
-- **`keyRotationRequired` (12 thang)** dang tinh bang `Duration.ofDays(365)` tren `createdAt` cua
-  khoa - xap xi "12 thang", chua tinh theo thang duong lich chinh xac.
 - Khong co job don dep dinh ky cho bang `kiosk_device_nonce` ngoai `@Scheduled` moi 5 phut da co
   (du nay da du dung cho muc dich chong phat lai 10 phut).
-- Rate limit o `POST /api/v1/kiosk/errors` kiem o tang controller (sau khi Spring da parse JSON
-  body) thay vi "truoc khi doc body" nhu tai lieu mo ta chi tiet nhat - khac biet nho, khong anh
-  huong ket qua tra ve nguoi goi (van tra 429 dung) nhung khac ve thu tu xu ly noi bo.
+
+### Da sua trong lan ra soat thu 2 (sau bao cao dau tien)
+
+- **ETag/If-None-Match** cho II.2.2 (`ads/playlist`) va II.2.12 (`bootstrap`) da trien khai
+  (`EtagSupport` + `WebRequest.checkNotModified()`): khong doi -> 304 khong body, dung header
+  `If-None-Match` cua request. Rieng bootstrap: ETag chi hash phan "on dinh" (gio mo/dong cua,
+  hotline, idleTimeoutSeconds...), KHONG hash `serverTime` (doi moi lan goi) - neu khong 304 se
+  khong bao gio xay ra vi noi dung luon khac nhau.
+- **Tim kiem san pham (II.2.7) gio khong phan biet dau** ("kim gia bao" khop "Kim Gia Bảo"): loc o
+  tang ung dung bang `VietnameseText.fold()` (NFD + bo dau ket hop + `đ`/`Đ` rieng + lowercase)
+  thay vi Postgres `unaccent` - chu dich KHONG dung extension DB can quyen `CREATE EXTENSION` (co
+  the khong co tren moi moi truong trien khai) va vi du an nay khong co admin UI nen du lieu san
+  pham co the duoc nhap thang bang SQL ngoai JPA (mot cot "ten da bo dau" luu san se khong chac
+  duoc dong bo trong truong hop do). Xem `VietnameseTextTest` va `ProductServiceSearchTest`.
+- **`keyRotationRequired` (12 thang)** gio tinh bang `ChronoUnit.MONTHS` (thang duong lich that),
+  khong con xap xi `Duration.ofDays(365)`.
+- **Gioi han goi (60/phut mac dinh) gio ap dung DUNG cho TAT CA API qua Bearer token**: ban dau chi
+  II.2.1/II.2.12 (10/phut), II.2.13 (1/phut) va mo SSE (6/phut) tu goi `RateLimiterService` rieng
+  le trong tung controller - 8 API con lai (ads/playlist, banner, category, product list/search/
+  detail, province, store, limit) **khong he co gioi han goi nao**. Da chuyen tap trung toan bo
+  viec kiem gioi han vao `DeviceAuthFilter` (map `RATE_LIMIT_OVERRIDES` cho 3 ngoai le, mac dinh
+  60/phut cho moi duong dan con lai) - dong thoi sua luon diem "rate limit o errors kiem SAU khi
+  da parse JSON body": gio kiem o filter, chay TRUOC ca DispatcherServlet/controller parse body.
 
 ## Nhung diem con bang khoan / da don gian hoa do dac ta chua ro rang
 
