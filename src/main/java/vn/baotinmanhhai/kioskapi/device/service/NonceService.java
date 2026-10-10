@@ -46,6 +46,7 @@ public class NonceService {
     }
 
     @Scheduled(fixedRate = 5 * 60 * 1000L)
+    @Transactional
     public void cleanupOldNonces() {
         try {
             int deleted = repository.deleteOlderThan(Instant.now().minus(REPLAY_WINDOW));

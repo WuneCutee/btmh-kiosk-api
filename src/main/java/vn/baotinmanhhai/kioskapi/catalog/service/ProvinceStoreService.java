@@ -3,7 +3,6 @@ package vn.baotinmanhhai.kioskapi.catalog.service;
 import org.springframework.stereotype.Service;
 import vn.baotinmanhhai.kioskapi.catalog.dto.ProvinceDto;
 import vn.baotinmanhhai.kioskapi.catalog.dto.StoreDto;
-import vn.baotinmanhhai.kioskapi.catalog.entity.ProvinceEntity;
 import vn.baotinmanhhai.kioskapi.catalog.entity.StoreEntity;
 import vn.baotinmanhhai.kioskapi.catalog.repo.ProvinceRepository;
 import vn.baotinmanhhai.kioskapi.catalog.repo.StoreRepository;
@@ -31,11 +30,18 @@ public class ProvinceStoreService {
         this.vietnameseCollator = Collator.getInstance(Locale.forLanguageTag("vi"));
     }
 
+    /**
+     * II.2.9: "Lay cac tinh/thanh CO cua hang nhan hang BAT cho kenh Kiosk" - tinh/thanh khong co
+     * cua hang bat nao PHAI bi loai khoi danh sach (khong phai tra storeCount=0). Truoc day chi
+     * loc theo kiosk_province.enabled ma khong loc storeCount>0, nen 1 tinh "enabled" nhung chua
+     * co cua hang nao van bi tra ve voi storeCount=0 - sai voi mo ta chuc nang cua tai lieu.
+     */
     public List<ProvinceDto> listWithStores() {
         return provinceRepository.findByEnabledTrue().stream()
-                .sorted(provinceComparator())
                 .map(p -> new ProvinceDto(p.getId(), p.getCode(), p.getName(),
                         storeRepository.countByProvinceIdAndEnabledTrue(p.getId())))
+                .filter(dto -> dto.storeCount() > 0)
+                .sorted(provinceComparator())
                 .toList();
     }
 
@@ -53,10 +59,10 @@ public class ProvinceStoreService {
                 .toList();
     }
 
-    private Comparator<ProvinceEntity> provinceComparator() {
+    private Comparator<ProvinceDto> provinceComparator() {
         return Comparator
-                .comparing((ProvinceEntity p) -> priorityOf(p.getCode()))
-                .thenComparing(ProvinceEntity::getName, vietnameseCollator::compare);
+                .comparing((ProvinceDto p) -> priorityOf(p.code()))
+                .thenComparing(ProvinceDto::name, vietnameseCollator::compare);
     }
 
     private int priorityOf(String code) {
