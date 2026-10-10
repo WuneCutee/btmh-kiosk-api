@@ -117,7 +117,11 @@ Tat ca duoi `/api/v1/kiosk/**` va `/api/v1/miniapp/**`, tru 3 dong dau can `Auth
    - `KIOSK_API_JWT_SECRET` (>= 32 byte, rieng cho du an nay)
    - `OPS_API_KEY` (pre-shared key cho `/internal/ops/**`)
    - `SERVER_PORT` (mac dinh 8091)
-2. Chay: `./mvnw.cmd spring-boot:run` (hoac `./mvnw spring-boot:run` tren Linux/Mac).
+2. Chay: `./mvnw.cmd spring-boot:run` (hoac `./mvnw spring-boot:run` tren Linux/Mac). Tren
+   **Windows**, neu Postgres bao loi `FATAL: invalid value for parameter "TimeZone": "Asia/Saigon"`
+   (JDBC driver khong nhan dien alias timezone nay tren JVM Windows), chay voi
+   `JAVA_TOOL_OPTIONS="-Duser.timezone=UTC" ./mvnw.cmd spring-boot:run` - da xac nhan can thiet khi
+   test that tren moi truong nay, cung mot loi da biet o `Backend/kiosk-admin`.
 3. `ddl-auto=update` se tu tao schema khi khoi dong lan dau (khong can migration thu cong).
 4. Tao may test de bat dau Luong 1 (kich hoat):
    ```bash
@@ -128,21 +132,43 @@ Tat ca duoi `/api/v1/kiosk/**` va `/api/v1/miniapp/**`, tru 3 dong dau can `Auth
    Response tra `activationCode` plaintext MOT LAN - dung ngay de goi `POST
    /api/v1/kiosk/devices/enroll` (ky bang private key App tu sinh, xem muc II.5.2 cua tai lieu).
 
-## Kiem thu da thuc hien (sandbox, khong co Postgres)
+## Kiem thu da thuc hien
 
 - `./mvnw.cmd -q -DskipTests compile` - **PASS**.
-- `./mvnw.cmd -q test` - **PASS**, 15/15 test, 3 class:
-  - `KioskSignatureTestVectorTest` (7 test): kiem chu ky RSASSA-PSS-SHA256 bang test vector chinh
-    thuc trong tai lieu (ca chieu verify chu ky cho san trong tai lieu, VA chieu tu ky bang private
-    key test vector roi verify lai, VA chieu am - chu ky sai/baseString bi sua doi phai bi tu choi).
-  - `VietnameseTextTest` (4 test): `VietnameseText.fold()` bo dau + ha chu thuong dung ("Kim Gia
-    Bảo Đạt" -> "kim gia bao dat", xu ly rieng `đ`/`Đ`).
-  - `ProductServiceSearchTest` (4 test): II.2.7 tim kiem san pham dung tu dau-cuoi (query khong
-    dau khop ten co dau, khong phan biet hoa/thuong, khong khop tra content rong thay vi loi, phan
-    trang tren tap da loc chinh xac).
-- **Khong co Postgres trong sandbox lam viec nay** nen KHONG kiem duoc runtime thuc te (khoi dong
-  app, goi API thuc, flow kich hoat/lay token/xoay khoa/SSE end-to-end). Code da duoc doc lai ky
-  theo tung bang truong cua tai lieu, nhung chua duoc xac nhan bang mot lan chay thuc voi DB.
+- `./mvnw.cmd -q test` - **PASS**, 20/20 test, 5 class: `KioskSignatureTestVectorTest` (7, test
+  vector chinh thuc trong tai lieu), `VietnameseTextTest` (4), `ProductServiceSearchTest` (4),
+  `ProvinceStoreServiceTest` (2), `ErrorReportServiceTest` (3).
+- **Da chay THAT voi Postgres 15 that (Docker, du lieu da xoa sau khi test xong) va goi HTTP THAT
+  (curl + chu ky RSASSA-PSS ky bang openssl, khong phai mock)** - khong con la "chi compile +
+  mock" nhu ban truoc. Da xac nhan hoat dong dung qua request/response that:
+  - Kich hoat may (II.2.14): ca luong tao moi VA luong goi lai idempotent (cung publicKey -> 200
+    "lap lai" thay vi 201), VA chu ky bi sua (timestamp khac voi luc ky) bi tu choi dung 401/101.
+  - Lay token (II.2.1), xoay khoa (II.2.15): xoay khoa xong, CA khoa cu lan khoa moi deu lay token
+    duoc trong 10 phut chong lap (dung thiet ke da ghi trong muc "Nhung diem con ban khoan").
+  - Thu hoi may qua `/internal/ops/devices/{code}/revoke`: request ke tiep tra dung 403/121 NGAY,
+    khong can doi token het han.
+  - Bootstrap + ETag: lan 2 goi kem `If-None-Match` dung gia tri ETag lan 1 -> tra dung 304, 0
+    byte body.
+  - Tim san pham (II.2.7) voi dung vi du cua tai lieu: query "kim gia bao" (khong dau) khop dung
+    san pham ten "Đồng Xu Kim Gia Bảo Hoa Sen..." (co dau) - xac nhan VietnameseText.fold() hoat
+    dong dung tren du lieu that, khong chi trong unit test.
+  - Tinh/thanh co cua hang (II.2.9): seed 2 tinh, chi 1 tinh co cua hang - phat hien bang test that
+    bang 1 loi (xem muc "Da sua" ben duoi).
+  - Bao loi (II.2.13) + gioi han 1 lan/phut: goi lan 2 trong cung phut tra dung 429 kem header
+    `Retry-After`.
+  - SSE (II.3): nhan dung `snapshot` ngay luc ket noi voi du lieu that; mo ket noi thu 2 cho CUNG
+    1 deviceCode -> ket noi 1 nhan dung su kien `replaced` roi dong, ket noi 2 nhan snapshot rieng.
+  - Cac loi chung: thieu/sai dinh dang `X-Trace-Id` -> 400 dung truoc moi xu ly khac; thieu
+    `Authorization` -> 401; `pageSize=101` -> 400 `VALIDATION_ERROR` dung cau truc `{field, code}`.
+  - **Phat hien va sua 2 loi THAT nho qua lan test nay** (xem commit `1e2bb92`): (1) job don dep
+    nonce dinh ky (`@Scheduled` moi 5 phut) thieu `@Transactional` tren 1 query `@Modifying`, nen
+    tu luc app chay chua bao gio don dep thanh cong lan nao (bi nuot loi am tham, khong crash app
+    nhung chuc nang khong hoat dong); (2) API tinh/thanh co cua hang tra ve CA tinh co 0 cua hang
+    bat, sai voi chinh mo ta chuc nang cua no.
+  - **Luu y ve moi truong Windows**: chay that tren Windows can them `-Duser.timezone=UTC` khi
+    khoi dong (`java -Duser.timezone=UTC -jar ...`), neu khong Postgres JDBC driver se loi `FATAL:
+    invalid value for parameter "TimeZone": "Asia/Saigon"` - cung loi da biet va ghi trong README
+    cua `kiosk-admin`, khong phai loi rieng cua du an nay.
 
 ## Ngoai pham vi (can lam them truoc khi dua vao van hanh thuc te)
 
