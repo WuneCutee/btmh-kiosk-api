@@ -6,6 +6,10 @@ thuoc pham vi bao mat noi bo - project nay chi bam sat dac ta cua tai lieu, KHON
 chung database voi hai du an anh em `Backend/webview` va `Backend/kiosk-admin`, du webview da co
 mot ban trien khai (rong hon, khong gioi han trong tai lieu nay) cho cung nghiep vu.
 
+**Ngoai le duy nhat (15/10/2026)**: phan **catalog** (san pham/nhom/cua hang/han muc) KHONG con
+tu quan ly bang bang JPA rieng nua - xem muc "Nguon catalog" ngay duoi day. Phan device/
+activation/SSE/ads/banner/bao loi van hoan toan doc lap nhu thiet ke ban dau.
+
 ## Vi sao co project nay
 
 Nguoi dung yeu cau mot backend **tach rieng hoan toan**, chi theo dung dac ta trong tai lieu tich
@@ -14,6 +18,72 @@ kiem/chi tiet san pham, SSE gia realtime, tinh/thanh + cua hang nhan hang, han m
 loi tu may, kich hoat may, xoay khoa, bootstrap) - khong phu thuoc code hay schema cua webview/
 kiosk-admin. Vai cho kho (sinh/xoay khoa RSA, mo hinh bang) duoc THAM KHAO thiet ke da chung minh
 dung cua webview (xem muc "Tham khao thiet ke" ben duoi) nhung viet lai entity/package rieng.
+
+## Nguon catalog (15/10/2026) - thay doi kien truc
+
+**Quyet dinh**: `kiosk-api` se la backend THAT cho App Kiosk (khong chi la ban tham khao spec),
+nen phan catalog (san pham/nhom san pham/cua hang/han muc) phai co **MOT nguon su thuc duy nhat**
+dung theo tai lieu BRS goc cua he thong ("cac san pham duoc cau hinh tren WebAdmin la input de
+hien thi tren webview") - khong duoc phep co 2 bo du lieu rieng le nhu da xay ra o cap
+`webview`/`admin-portal` truoc day (xem `KIOSK_HANDOFF.md`/`PROJECT_OVERVIEW.md` o repo goc cho
+boi canh day du cua van de nay).
+
+`Backend/admin-portal` la he quan tri san pham THAT duy nhat cua BTMH (ban vang da kenh: BIDV/
+MB/VTC/Kiosk) nen duoc chon la system-of-record. `kiosk-api` **doc (read-only) qua bo API
+partner-HMAC co san cua admin-portal** (`GET /api/products|categories|stores|limits`, cung co che
+HMAC-SHA256 + chong replay dang dung cho MB) - KHONG dung chung database, KHONG Feign, chi la 1
+client HTTP thuong (`RestTemplate`) tu ky request, giu dung nguyen tac "khong phu thuoc schema"
+da ghi o tren.
+
+**Thanh phan moi** (package `vn.baotinmanhhai.kioskapi.catalog.adminclient`):
+- `AdminPortalHmacSigner` - port lai 1:1 thuat toan ky cua `PartnerAuthFilter`/
+  `HmacSignatureVerifier` phia admin-portal (base string
+  `METHOD\nPATH\nQUERY\nTIMESTAMP\nNONCE\nSHA256(BODY)`, HMAC-SHA256, Base64) - khong dung chung
+  code vi 2 service khong share module.
+- `AdminPortalClient` - goi 4 endpoint, moi endpoint 1 **TTL cache trong-tien-trinh** (mac dinh
+  30s, `admin-portal.cache-ttl-seconds`) - dung triet ly "khong Redis, single-instance" da chot
+  tu luc khoi tao project; neu admin-portal tam thoi khong toi duoc, tra ban cache CU (du het TTL)
+  thay vi 500 ngay, chi nem loi khi CHUA TUNG lay duoc du lieu lan nao.
+- `ProductService`/`CategoryService`/`ProvinceStoreService`/`LimitService` (va
+  `PriceStreamService` cho SSE II.3) doi tu doc JPA repo rieng (`kiosk_product`, `category`,
+  `stores`, `province`, `"limit"` - DA XOA cac entity/repo nay) sang goi `AdminPortalClient`, loc/
+  phan trang/tim kiem (Vietnamese fold) trong Java tren danh sach da cache - giu nguyen logic cu,
+  chi doi nguon du lieu.
+
+**Thay doi tren `admin-portal`** (additive, khong doi hop dong cu cua MB):
+- Them `category_code`/`product_id`/`quantity`/`images[]` vao `ProductData` (truoc chi co
+  `img` don + ten nhom, thieu id/ma nhom on dinh de kiosk-api noi voi GET /api/categories).
+- Them `number_days_receive` + mo lai 6 field dia chi (`province_id/name`, `district_id/name`,
+  `ward_id/name`, truoc day tam an bang `@JsonIgnoreProperties`) trong `StoreItem` - kiosk-api can
+  cho II.2.9/II.2.10.
+- 2 endpoint MOI: `GET /api/categories`, `GET /api/limits` (cung PartnerAuthFilter, cung dang ky
+  vao `app.partner.endpoints`).
+- Da tao 1 `PartnerEntity` (`code=KIOSK`) + seed `PartnerProductConfig`/`PartnerCategoryConfig`/
+  `PartnerStoreConfig` + 1 credential Vault KV rieng cho kiosk-api tren moi truong dev (xem bien
+  moi truong `ADMIN_PORTAL_API_KEY`/`ADMIN_PORTAL_SECRET_KEY` o muc "Cach chay").
+
+**Han che da biet**: `priceId`/`serviceCode` trong `ProductListItemDto`/`ProductDetailDto` luon
+`null` - admin-portal chua lo 2 field nay qua API partner (khong anh huong logic nghiep vu hien
+tai, chua co man checkout dung chung). `pickupHours` trong `StoreDto` luon `null` - admin-portal
+chua co khai niem gio nhan hang rieng cho tung cua hang.
+
+**Dong bo gia/ton realtime (16/10/2026)**: `PriceStreamService.pollAdminPortal()` doc tuoi
+`GET /api/products` moi 5 giay (chi khi co ket noi SSE), so voi lan truoc: doi tap/thu tu san pham
+-> `snapshot`, doi gia ban/gia mua/ton -> `price` (xu huong UP/DOWN so voi lan poll truoc). Da do
+that: doi gia o admin-portal -> the san pham tren App doi sau ~10 giay, khong can mo lai man hinh.
+Them `POST /internal/ops/catalog-changed` (X-Ops-Key): kiosk-admin goi ngay sau moi lan ghi thanh
+cong vao san pham/gia/nhom/ton (`CatalogChangeNotifyFilter`) -> kiosk-api kiem tra lai ngay, day SSE
+trong ~0.4 giay (do that); vong 5 giay van chay lam du phong. Doi ten/anh/mo ta/ban vi/nhom -> gui
+`snapshot`, App tai lai danh sach (va man chi tiet neu dang mo) qua II.2.6/II.2.8.
+Bat/tat san pham tren web admin di qua handler cua admin-portal (tu xoa cache `bank-product-catalog`);
+sua thang DB thi phai tu xoa key Redis do moi thay.
+
+**Id tinh/cua hang la so** (spec II.2.9/II.2.10): lay tu `internal_id`/`province_internal_id`/
+`ward_internal_id` ma `GET /api/stores` cua admin-portal tra them.
+
+**App Android tro vao day**: ban debug mac dinh `http://10.0.2.2:8091`. Du lieu rieng cua
+kiosk-api (quang cao `kiosk_ad`, banner `kiosk_banner`, cau hinh kenh `kiosk_channel_config`) van o
+DB `kiosk_api`, chua co man quan tri - sua bang SQL.
 
 ## Kien truc / quyet dinh ky thuat
 
@@ -81,6 +151,33 @@ lieu test vao he thong. Vi vay them 2 endpoint noi bo, ro rang tach khoi API con
 | POST | `/internal/ops/devices` | Tao may PENDING + phat ma kich hoat dau tien (tra plaintext MOT LAN) |
 | POST | `/internal/ops/devices/{deviceCode}/revoke` | Thu hoi may (set REVOKED, gui `device-revoked` qua SSE neu dang mo) |
 
+### API quan tri cho web admin (kiosk-admin) - 16/10/2026
+
+Cung prefix `/internal/ops/**`, cung header `X-Ops-Key`, cung bao `{code, message, data, timestamp}`.
+Loi nghiep vu tra 400/404/409 voi `code` tuong ung (409 `122` = may khong o PENDING, 409 `124` = may
+khong ACTIVE).
+
+| Method | Path | Mo ta |
+|---|---|---|
+| GET | `/internal/ops/ads` | Tat ca quang cao (ca dang tat), theo `order` tang dan |
+| POST | `/internal/ops/ads` | Tao (201). Server tai media de tinh `checksum` SHA-256 + `sizeBytes`; anh <= 5 MB, video <= 50 MB; toi da 20 quang cao |
+| PUT | `/internal/ops/ads/{id}` | Sua toan bo (chi tai lai media khi doi `url`/`mediaType`) |
+| DELETE | `/internal/ops/ads/{id}` | Xoa |
+| POST | `/internal/ops/ads/{id}/toggle` | Bat/tat |
+| GET | `/internal/ops/banners` | Tat ca banner, theo `priority` tang dan |
+| POST / PUT / DELETE | `/internal/ops/banners`, `/internal/ops/banners/{id}` | Tao (201) / sua / xoa |
+| POST | `/internal/ops/banners/{id}/toggle` | Bat/tat |
+| GET / PUT | `/internal/ops/channel-config` | Gio mo/dong (`HH:mm`, ca hai null = khong gioi han), hotline, idle, nguong gia cu, minAppVersion, tam dung kenh |
+| GET | `/internal/ops/devices` | Danh sach may (moi nhat truoc), kem `online` (dang mo SSE) va khoa ACTIVE |
+| GET / PUT / DELETE | `/internal/ops/devices/{deviceCode}` | Xem / doi cua hang / xoa (xoa ca khoa, ma kich hoat, nonce; GIU log loi; dong SSE) |
+| POST | `/internal/ops/devices/{deviceCode}/activation-code` | Cap lai ma kich hoat (chi PENDING, huy ma cu) |
+| POST | `/internal/ops/devices/{deviceCode}/force-key-rotation` | Ep xoay khoa o lan goi tiep theo (chi ACTIVE) |
+| GET | `/internal/ops/device-error-logs?deviceCode=&page=0&size=50` | Log loi may, moi nhat truoc, `size` toi da 200 |
+
+Su kien SSE sau moi lan ghi: quang cao -> `playlist-changed`; banner, cau hinh kenh, doi cua hang cua
+may -> `config-changed`. Vong poll 5 giay cung so danh muc tu admin-portal (code/ten/uu tien) va gui
+`config-changed` khi doi.
+
 Bao ve bang header `X-Ops-Key` phai khop bien moi truong `OPS_API_KEY`. **Day khong phai mot phan
 cua dac ta BTMH** - mot trien khai thuc te nghiem tuc hon nen thay the bang mot cong cu quan tri
 noi bo rieng (vi du ket noi vao `kiosk-admin` hoac mot portal that).
@@ -117,11 +214,17 @@ Tat ca duoi `/api/v1/kiosk/**` va `/api/v1/miniapp/**`, tru 3 dong dau can `Auth
    - `KIOSK_API_JWT_SECRET` (>= 32 byte, rieng cho du an nay)
    - `OPS_API_KEY` (pre-shared key cho `/internal/ops/**`)
    - `SERVER_PORT` (mac dinh 8091)
+   - `ADMIN_PORTAL_BASE_URL` (mac dinh `http://localhost:8386`), `ADMIN_PORTAL_API_KEY`/
+     `ADMIN_PORTAL_SECRET_KEY` (credential partner-HMAC cap rieng cho kiosk-api tren Vault KV cua
+     admin-portal, `secret/partner-cred/<api_key>` - xem muc "Nguon catalog"; KHONG co gia tri mac
+     dinh, phai set hoac 4 API catalog se tra 999 ngay request dau)
 2. Chay: `./mvnw.cmd spring-boot:run` (hoac `./mvnw spring-boot:run` tren Linux/Mac). Tren
    **Windows**, neu Postgres bao loi `FATAL: invalid value for parameter "TimeZone": "Asia/Saigon"`
    (JDBC driver khong nhan dien alias timezone nay tren JVM Windows), chay voi
    `JAVA_TOOL_OPTIONS="-Duser.timezone=UTC" ./mvnw.cmd spring-boot:run` - da xac nhan can thiet khi
-   test that tren moi truong nay, cung mot loi da biet o `Backend/kiosk-admin`.
+   test that tren moi truong nay, cung mot loi da biet o `Backend/kiosk-admin`. Rieng
+   **admin-portal va kiosk-admin** phai chay `-Duser.timezone=Asia/Ho_Chi_Minh` (KHONG phai UTC): ho ghi
+   `product_prices.updated_at` theo gio dia phuong, chay UTC lam "Cap nhat luc" tren bang gia App lech 7 tieng.
 3. `ddl-auto=update` se tu tao schema khi khoi dong lan dau (khong can migration thu cong).
 4. Tao may test de bat dau Luong 1 (kich hoat):
    ```bash
@@ -175,9 +278,8 @@ Tat ca duoi `/api/v1/kiosk/**` va `/api/v1/miniapp/**`, tru 3 dong dau can `Auth
 - **Khong co admin UI** de quan ly ngay-qua-ngay noi dung (quang cao, banner, danh muc, san pham,
   gia, cua hang, han muc, cau hinh kenh). Hien tai phai sua truc tiep bang SQL, hoac xay mot cong
   cu quan tri rieng (co the noi tiep tu `kiosk-admin`).
-- **Khong co nguon gia thuc** day vao he thong - `PriceStreamService.broadcastPriceChange(...)` va
-  `broadcastSnapshot()` da viet san nhung chua co job/nguon nao goi toi; can noi voi he thong gia
-  vang thuc cua BTMH.
+- **Gia lay tu admin-portal** (`product_prices`) - admin-portal tu noi voi nguon gia vang thuc cua BTMH;
+  kiosk-api chi poll va day SSE (xem muc "Dong bo gia/ton realtime").
 - **Khong scale ngang duoc** - xem muc "Khong Redis" tren; rate limit/nonce/SSE registry deu gia
   dinh 1 instance duy nhat.
 - **Trang thai rate limit mat khi restart** (trong-tien-trinh, khong ben bi) - chap nhan duoc cho

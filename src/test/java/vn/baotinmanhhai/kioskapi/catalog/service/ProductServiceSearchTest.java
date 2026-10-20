@@ -2,11 +2,10 @@ package vn.baotinmanhhai.kioskapi.catalog.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import vn.baotinmanhhai.kioskapi.catalog.adminclient.AdminPortalClient;
+import vn.baotinmanhhai.kioskapi.catalog.adminclient.AdminProductDto;
 import vn.baotinmanhhai.kioskapi.catalog.dto.PageResponse;
 import vn.baotinmanhhai.kioskapi.catalog.dto.ProductListItemDto;
-import vn.baotinmanhhai.kioskapi.catalog.entity.ProductEntity;
-import vn.baotinmanhhai.kioskapi.catalog.repo.ProductImageRepository;
-import vn.baotinmanhhai.kioskapi.catalog.repo.ProductRepository;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -18,27 +17,23 @@ import static org.mockito.Mockito.when;
 
 /**
  * II.2.7: "Tim chuoi con, khong phan biet hoa/thuong va khong phan biet dau ('kim gia bao' tim
- * duoc 'Kim Gia Bảo')" - chung minh ProductService.search() thuc su loc dung (khong chi
- * VietnameseText.fold() rieng le ma ca duong di qua repository + phan trang).
+ * duoc 'Kim Gia Bảo')" - chung minh ProductService.search() thuc su loc dung tren du lieu doc tu
+ * admin-portal (AdminPortalClient) + phan trang.
  */
 class ProductServiceSearchTest {
 
-    private ProductRepository productRepository;
-    private ProductImageRepository productImageRepository;
+    private AdminPortalClient adminPortalClient;
     private ProductService productService;
 
     @BeforeEach
     void setUp() {
-        productRepository = mock(ProductRepository.class);
-        productImageRepository = mock(ProductImageRepository.class);
-        productService = new ProductService(productRepository, productImageRepository);
-        when(productImageRepository.findByProductIdInOrderByPriorityAsc(org.mockito.ArgumentMatchers.anyList()))
-                .thenReturn(List.of());
+        adminPortalClient = mock(AdminPortalClient.class);
+        productService = new ProductService(adminPortalClient);
     }
 
     @Test
     void findsAccentedNameByUnaccentedQuery() {
-        when(productRepository.findAllEnabledPricedAcrossCategories()).thenReturn(List.of(
+        when(adminPortalClient.getProducts()).thenReturn(List.of(
                 product("p1", "Đồng Xu Kim Gia Bảo Hoa Sen"),
                 product("p2", "Vòng tay bạc")
         ));
@@ -51,7 +46,7 @@ class ProductServiceSearchTest {
 
     @Test
     void caseInsensitive() {
-        when(productRepository.findAllEnabledPricedAcrossCategories()).thenReturn(List.of(
+        when(adminPortalClient.getProducts()).thenReturn(List.of(
                 product("p1", "Nhẫn Vàng 24K")
         ));
 
@@ -62,7 +57,7 @@ class ProductServiceSearchTest {
 
     @Test
     void noMatchReturnsEmptyContentNotError() {
-        when(productRepository.findAllEnabledPricedAcrossCategories()).thenReturn(List.of(
+        when(adminPortalClient.getProducts()).thenReturn(List.of(
                 product("p1", "Nhẫn Vàng 24K")
         ));
 
@@ -74,7 +69,7 @@ class ProductServiceSearchTest {
 
     @Test
     void paginatesFilteredResultsCorrectly() {
-        when(productRepository.findAllEnabledPricedAcrossCategories()).thenReturn(List.of(
+        when(adminPortalClient.getProducts()).thenReturn(List.of(
                 product("p1", "Vàng miếng loại 1"),
                 product("p2", "Vàng miếng loại 2"),
                 product("p3", "Vàng miếng loại 3"),
@@ -93,14 +88,8 @@ class ProductServiceSearchTest {
         assertTrue(page1.last());
     }
 
-    private static ProductEntity product(String id, String name) {
-        ProductEntity p = new ProductEntity();
-        p.setId(id);
-        p.setName(name);
-        p.setCategoryId("cat-1");
-        p.setCode(id.toUpperCase());
-        p.setQuantity(new BigDecimal("1.00"));
-        p.setPrice(1_000_000L);
-        return p;
+    private static AdminProductDto product(String id, String name) {
+        return new AdminProductDto(id, id.toUpperCase(), name, "1000000", null, "Active",
+                "cat-1", new BigDecimal("1.00"), null, List.of(), "2026-10-15T00:00:00+07:00", 0);
     }
 }

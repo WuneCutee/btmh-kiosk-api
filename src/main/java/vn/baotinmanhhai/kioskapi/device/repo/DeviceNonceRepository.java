@@ -15,4 +15,8 @@ public interface DeviceNonceRepository extends JpaRepository<DeviceNonceEntity, 
     @Modifying
     @Query("DELETE FROM DeviceNonceEntity n WHERE n.createdAt < :cutoff")
     int deleteOlderThan(@Param("cutoff") Instant cutoff);
+
+    @Modifying
+    @Query("DELETE FROM DeviceNonceEntity n WHERE n.id.deviceCode = :deviceCode")
+    int deleteByDeviceCode(@Param("deviceCode") String deviceCode);
 }

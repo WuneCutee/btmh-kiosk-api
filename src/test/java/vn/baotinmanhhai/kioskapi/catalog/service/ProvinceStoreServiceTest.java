@@ -2,10 +2,10 @@ package vn.baotinmanhhai.kioskapi.catalog.service;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import vn.baotinmanhhai.kioskapi.catalog.adminclient.AdminPortalClient;
+import vn.baotinmanhhai.kioskapi.catalog.adminclient.AdminStoreDto;
 import vn.baotinmanhhai.kioskapi.catalog.dto.ProvinceDto;
-import vn.baotinmanhhai.kioskapi.catalog.entity.ProvinceEntity;
-import vn.baotinmanhhai.kioskapi.catalog.repo.ProvinceRepository;
-import vn.baotinmanhhai.kioskapi.catalog.repo.StoreRepository;
+import vn.baotinmanhhai.kioskapi.catalog.dto.StoreDto;
 
 import java.util.List;
 
@@ -14,61 +14,63 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * II.2.9: "Lay cac tinh/thanh CO cua hang nhan hang BAT" - tinh enabled nhung storeCount=0 phai
- * bi LOAI khoi ket qua (khong phai tra ve voi storeCount=0). Phat hien qua test thu thuc te voi
- * Postgres: 2 tinh enabled, chi 1 tinh co cua hang, tinh kia (Ho Chi Minh) van bi tra ve sai.
+ * II.2.9/II.2.10: chi tinh co cua hang moi duoc tra; id tinh/cua hang la id SO (spec), lay tu
+ * province_internal_id/internal_id cua admin-portal. Ma hanh chinh thuc: 01=Ha Noi, 79=Ho Chi Minh.
  */
 class ProvinceStoreServiceTest {
 
-    private ProvinceRepository provinceRepository;
-    private StoreRepository storeRepository;
+    private AdminPortalClient adminPortalClient;
     private ProvinceStoreService service;
 
     @BeforeEach
     void setUp() {
-        provinceRepository = mock(ProvinceRepository.class);
-        storeRepository = mock(StoreRepository.class);
-        service = new ProvinceStoreService(provinceRepository, storeRepository);
+        adminPortalClient = mock(AdminPortalClient.class);
+        service = new ProvinceStoreService(adminPortalClient);
     }
 
     @Test
-    void excludesProvincesWithoutAnyEnabledStore() {
-        ProvinceEntity hanoi = province(1L, "HN", "Hà Nội");
-        ProvinceEntity hcm = province(2L, "HCM", "Hồ Chí Minh");
-        when(provinceRepository.findByEnabledTrue()).thenReturn(List.of(hanoi, hcm));
-        when(storeRepository.countByProvinceIdAndEnabledTrue(1L)).thenReturn(1L);
-        when(storeRepository.countByProvinceIdAndEnabledTrue(2L)).thenReturn(0L);
+    void excludesProvincesWithoutAnyStore() {
+        when(adminPortalClient.getStores()).thenReturn(List.of(store(11L, 1L, "01", "Hà Nội")));
 
         List<ProvinceDto> result = service.listWithStores();
 
         assertEquals(1, result.size());
-        assertEquals("HN", result.get(0).code());
+        assertEquals(1L, result.get(0).id());
+        assertEquals("01", result.get(0).code());
     }
 
     @Test
     void hanoiAndHcmArePinnedFirstWhenBothHaveStores() {
-        ProvinceEntity hanoi = province(1L, "HN", "Hà Nội");
-        ProvinceEntity hcm = province(2L, "HCM", "Hồ Chí Minh");
-        ProvinceEntity danang = province(3L, "DN", "Đà Nẵng");
-        when(provinceRepository.findByEnabledTrue()).thenReturn(List.of(danang, hcm, hanoi));
-        when(storeRepository.countByProvinceIdAndEnabledTrue(1L)).thenReturn(2L);
-        when(storeRepository.countByProvinceIdAndEnabledTrue(2L)).thenReturn(3L);
-        when(storeRepository.countByProvinceIdAndEnabledTrue(3L)).thenReturn(1L);
+        when(adminPortalClient.getStores()).thenReturn(List.of(
+                store(1L, 3L, "48", "Đà Nẵng"),
+                store(2L, 2L, "79", "Hồ Chí Minh"),
+                store(3L, 1L, "01", "Hà Nội")
+        ));
 
         List<ProvinceDto> result = service.listWithStores();
 
         assertEquals(3, result.size());
-        assertEquals("HN", result.get(0).code());
-        assertEquals("HCM", result.get(1).code());
-        assertEquals("DN", result.get(2).code());
+        assertEquals("01", result.get(0).code());
+        assertEquals("79", result.get(1).code());
+        assertEquals("48", result.get(2).code());
     }
 
-    private static ProvinceEntity province(long id, String code, String name) {
-        ProvinceEntity p = new ProvinceEntity();
-        p.setId(id);
-        p.setCode(code);
-        p.setName(name);
-        p.setEnabled(true);
-        return p;
+    @Test
+    void storesByProvinceUseNumericIds() {
+        when(adminPortalClient.getStores()).thenReturn(List.of(
+                store(7L, 1L, "01", "Hà Nội"),
+                store(8L, 2L, "79", "Hồ Chí Minh")
+        ));
+
+        List<StoreDto> result = service.listByProvince(1L);
+
+        assertEquals(1, result.size());
+        assertEquals(7L, result.get(0).id());
+        assertEquals(1L, result.get(0).provinceId());
+    }
+
+    private static AdminStoreDto store(long id, long provinceId, String provinceCode, String provinceName) {
+        return new AdminStoreDto("S" + id, id, provinceId, null, "Store " + id, "Dia chi",
+                provinceCode, provinceName, null, null, 1, null);
     }
 }

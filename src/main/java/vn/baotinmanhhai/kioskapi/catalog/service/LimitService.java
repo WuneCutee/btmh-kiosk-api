@@ -1,23 +1,20 @@
 package vn.baotinmanhhai.kioskapi.catalog.service;
 
 import org.springframework.stereotype.Service;
+import vn.baotinmanhhai.kioskapi.catalog.adminclient.AdminPortalClient;
 import vn.baotinmanhhai.kioskapi.catalog.dto.LimitDto;
-import vn.baotinmanhhai.kioskapi.catalog.entity.TransactionLimitEntity;
-import vn.baotinmanhhai.kioskapi.catalog.repo.TransactionLimitRepository;
 
-/** II.2.11. */
+/** II.2.11 - doc tu admin-portal (GET /api/limits), nguon catalog duy nhat (xem README). */
 @Service
 public class LimitService {
 
-    private final TransactionLimitRepository repository;
+    private final AdminPortalClient adminPortalClient;
 
-    public LimitService(TransactionLimitRepository repository) {
-        this.repository = repository;
+    public LimitService(AdminPortalClient adminPortalClient) {
+        this.adminPortalClient = adminPortalClient;
     }
 
     public LimitDto getActive() {
-        return repository.findById(TransactionLimitEntity.SINGLETON_ID)
-                .map(e -> new LimitDto(e.getLimitQuantity()))
-                .orElse(new LimitDto(null));
+        return new LimitDto(adminPortalClient.getActiveLimit().limitQuantity());
     }
 }

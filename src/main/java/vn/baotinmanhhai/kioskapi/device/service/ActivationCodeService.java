@@ -3,6 +3,7 @@ package vn.baotinmanhhai.kioskapi.device.service;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import vn.baotinmanhhai.kioskapi.common.ApiException;
+import vn.baotinmanhhai.kioskapi.common.ErrorCodes;
 import vn.baotinmanhhai.kioskapi.device.entity.ActivationCodeEntity;
 import vn.baotinmanhhai.kioskapi.device.entity.DeviceEntity;
 import vn.baotinmanhhai.kioskapi.device.repo.ActivationCodeRepository;
@@ -24,7 +25,9 @@ import java.util.UUID;
 @Service
 public class ActivationCodeService {
 
-    private static final String BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    // Phai khop bang ky tu App chap nhan (ActivationInput.kt: khong co I/L/O/U, co 0/1; App tu doi
+    // I/L->1, O->0 va bo ky tu ngoai bang) - Base32 chuan cu sinh ma chua I/O/U/L khong go duoc.
+    private static final String BASE32_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
     private static final int ACTIVATION_CODE_LENGTH = 12;
     private static final Duration ACTIVATION_CODE_TTL = Duration.ofHours(24);
 
@@ -53,6 +56,24 @@ public class ActivationCodeService {
         device.setCreatedAt(Instant.now());
         device.setForceKeyRotation(false);
         deviceRepository.save(device);
+        return issueActivationCode(deviceCode);
+    }
+
+    /**
+     * Cap lai ma kich hoat cho may PENDING (ma cu het han/that lac): huy moi ma chua dung con hieu luc
+     * roi phat ma moi. May khong ton tai -> 404; khong o PENDING (ACTIVE/REVOKED) -> 409 code 122.
+     */
+    @Transactional
+    public IssuedActivationCode reissueActivationCode(String deviceCode) {
+        DeviceEntity device = deviceRepository.findById(deviceCode)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "404", "Khong tim thay may: " + deviceCode));
+        if (!device.isPending()) {
+            throw ErrorCodes.deviceNotPending();
+        }
+        for (ActivationCodeEntity old : activationCodeRepository.findByDeviceCodeAndUsedFalseAndRevokedFalse(deviceCode)) {
+            old.setRevoked(true);
+            activationCodeRepository.save(old);
+        }
         return issueActivationCode(deviceCode);
     }
 

@@ -27,6 +27,16 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+admin-portal:
+  # Nguon catalog duy nhat (san pham/nhom/cua hang/han muc) - quyet dinh 15/10/2026, xem README
+  # muc "Nguon catalog". Goi qua bo API partner-HMAC cua admin-portal (PartnerAuthFilter).
+  base-url: ${ADMIN_PORTAL_BASE_URL:http://localhost:8386}
+  api-key: ${ADMIN_PORTAL_API_KEY:}
+  secret-key: ${ADMIN_PORTAL_SECRET_KEY:}
+  connect-timeout-ms: 3000
+  read-timeout-ms: 5000
+  cache-ttl-seconds: 30
+
 kiosk:
   jwt:
     # Secret rieng cua kiosk-api, KHONG dung chung voi be-webview hay kiosk-admin.
